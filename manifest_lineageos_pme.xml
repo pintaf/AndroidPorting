@@ -3,4 +3,5 @@
   <project name="Fagyi/android_device_htc_pme" path="device/htc/pme" remote="github" />
   <project name="Fagyi/android_kernel_htc_msm8996" path="kernel/htc/msm8996" remote="github" />
   <project name="Fagyi/proprietary_vendor_htc" path="vendor/htc" remote="github" />
+  <project name="LineageOS/android_packages_resources_devicesettings" path="packages/resources/devicesettings" remote="github" />
 </manifest>

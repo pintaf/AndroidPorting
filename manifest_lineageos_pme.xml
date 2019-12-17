@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
-  <project name="pintaf/android_device_htc_pme" path="device/htc/pme" remote="github" revision="lineage-15.1" />
-  <project name="pintaf/android_kernel_htc_msm8996" path="kernel/htc/msm8996" remote="github" revision="lineage-15.1" />
+  <project name="pintaf/android_device_htc_pme" path="device/htc/pme" remote="github" revision="maru-0.6" />
+  <project name="pintaf/android_kernel_htc_msm8996" path="kernel/htc/msm8996" remote="github" revision="maru-0.6" />
   <project name="pintaf/proprietary_vendor_htc" path="vendor/htc" remote="github" revision="lineage-15.1" />
   <project name="LineageOS/android_packages_resources_devicesettings" path="packages/resources/devicesettings" remote="github" revision="lineage-15.1" />
 </manifest>

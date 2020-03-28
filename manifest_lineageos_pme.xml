@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
+  <remote name="zx2c4" fetch="https://git.zx2c4.com/" />
+  <project remote="zx2c4" name="android_kernel_wireguard" path="kernel/wireguard" revision="master" sync-s="true" />
   <project name="Fagyi/android_device_htc_pme" path="device/htc/pme" remote="github" revision="lineage-16.0" />
   <project name="Fagyi/android_kernel_htc_msm8996" path="kernel/htc/msm8996" remote="github" revision="lineage-16.0" />
   <project name="Fagyi/proprietary_vendor_htc" path="vendor/htc" remote="github" revision="lineage-16.0" />

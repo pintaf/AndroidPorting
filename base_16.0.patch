@@ -523,15 +523,9 @@ diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/
 diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/config.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/config.xml
 --- /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/config.xml	2020-03-08 02:58:21.972820367 +0200
 +++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/config.xml	2019-04-25 04:25:45.000000000 +0300
-@@ -123,7 +123,7 @@
- 
-     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
-     <string name="quick_settings_tiles_stock" translatable="false">
--        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,reading_mode,sync,usb_tether,volume_panel
+@@ -126,1 +126,1 @@
+-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,reading_mode,sync,usb_tether,volume_panel,profiles
 +        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,reading_mode,sync,usb_tether,volume_panel,mmirror
-     </string>
- 
-     <!-- The tiles to display in QuickSettings -->
 diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/strings.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/strings.xml
 --- /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/strings.xml	2020-03-08 02:58:21.976820385 +0200
 +++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/strings.xml	2019-04-25 04:26:34.000000000 +0300

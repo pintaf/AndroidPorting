@@ -1,0 +1,1915 @@
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/Android.bp /media/hdd/lineage_16/frameworks/base/Android.bp
+--- /media/ssd/patches/frameworks/base/Android.bp	2020-03-08 02:58:17.140798880 +0200
++++ /media/hdd/lineage_16/frameworks/base/Android.bp	2019-04-25 04:02:06.000000000 +0300
+@@ -185,6 +185,8 @@
+         "core/java/android/hardware/soundtrigger/IRecognitionStatusCallback.aidl",
+         "core/java/android/hardware/usb/IUsbManager.aidl",
+         "core/java/android/net/ICaptivePortal.aidl",
++        "core/java/android/mperspective/IPerspectiveService.aidl",
++        "core/java/android/mperspective/IPerspectiveServiceCallback.aidl",
+         "core/java/android/net/IConnectivityManager.aidl",
+         "core/java/android/net/IIpConnectivityMetrics.aidl",
+         "core/java/android/net/IEthernetManager.aidl",
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/app/SystemServiceRegistry.java /media/hdd/lineage_16/frameworks/base/core/java/android/app/SystemServiceRegistry.java
+--- /media/ssd/patches/frameworks/base/core/java/android/app/SystemServiceRegistry.java	2020-03-08 02:58:17.328799715 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/app/SystemServiceRegistry.java	2019-04-25 04:03:29.000000000 +0300
+@@ -75,6 +75,8 @@
+ import android.media.soundtrigger.SoundTriggerManager;
+ import android.media.tv.ITvInputManager;
+ import android.media.tv.TvInputManager;
++import android.mperspective.IPerspectiveService;
++import android.mperspective.PerspectiveManager;
+ import android.net.ConnectivityManager;
+ import android.net.ConnectivityThread;
+ import android.net.EthernetManager;
+@@ -562,6 +564,14 @@
+                 IBinder b = ServiceManager.getServiceOrThrow(Context.SERIAL_SERVICE);
+                 return new SerialManager(ctx, ISerialManager.Stub.asInterface(b));
+             }});
++        //maru
++        registerService(Context.PERSPECTIVE_SERVICE, PerspectiveManager.class,
++                new CachedServiceFetcher<PerspectiveManager>() {
++            @Override
++            public PerspectiveManager createService(ContextImpl ctx) {
++                IBinder b = ServiceManager.getService(Context.PERSPECTIVE_SERVICE);
++                return new PerspectiveManager(IPerspectiveService.Stub.asInterface(b));
++            }});
+ 
+         registerService(Context.VIBRATOR_SERVICE, Vibrator.class,
+                 new CachedServiceFetcher<Vibrator>() {
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/content/Context.java /media/hdd/lineage_16/frameworks/base/core/java/android/content/Context.java
+--- /media/ssd/patches/frameworks/base/core/java/android/content/Context.java	2020-03-08 02:58:17.356799840 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/content/Context.java	2019-04-25 04:06:20.000000000 +0300
+@@ -4201,6 +4201,17 @@
+     public static final String TIME_ZONE_RULES_MANAGER_SERVICE = "timezone";
+ 
+     /**
++     * Use with {@link #getSystemService} to retrieve a {@link
++     * android.mperspective.PerspectiveManager} instance for managing
++     * perspectives.
++     * @see #getSystemService
++     * @see android.mperspective.PerspectiveManager
++     * @hide
++     */
++    public static final String PERSPECTIVE_SERVICE = "perspective";
++
++    
++    /**
+      * Use with {@link #getSystemService(String)} to retrieve a
+      * {@link android.content.pm.CrossProfileApps} for cross profile operations.
+      *
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/hardware/display/DisplayManagerGlobal.java /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/DisplayManagerGlobal.java
+--- /media/ssd/patches/frameworks/base/core/java/android/hardware/display/DisplayManagerGlobal.java	2020-03-08 02:58:17.400800035 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/DisplayManagerGlobal.java	2019-04-25 04:07:38.000000000 +0300
+@@ -280,6 +280,31 @@
+         }
+     }
+ 
++    public void enablePhoneMirroring() {
++        try {
++            mDm.enablePhoneMirroring();
++        } catch (RemoteException ex) {
++            Log.e(TAG, "Failed to enable mirroring with display manager service.", ex);
++        }
++    }
++
++    public void disablePhoneMirroring() {
++        try {
++            mDm.disablePhoneMirroring();
++        } catch (RemoteException ex) {
++            Log.e(TAG, "Failed to disable mirroring with display manager service.", ex);
++        }
++    }
++
++    public boolean isPhoneMirroringEnabled() {
++        try {
++            return mDm.isPhoneMirroringEnabled();
++        } catch (RemoteException ex) {
++            Log.e(TAG, "Failed to get mirroring configuration from display manager service.", ex);
++        }
++        return false;
++    }
++
+     public void startWifiDisplayScan() {
+         synchronized (mLock) {
+             if (mWifiDisplayScanNestCount++ == 0) {
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/hardware/display/DisplayManager.java /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/DisplayManager.java
+--- /media/ssd/patches/frameworks/base/core/java/android/hardware/display/DisplayManager.java	2020-03-08 02:58:17.400800035 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/DisplayManager.java	2019-04-25 04:08:23.000000000 +0300
+@@ -425,6 +425,18 @@
+         mGlobal.unregisterDisplayListener(listener);
+     }
+ 
++    public void enablePhoneMirroring() {
++        mGlobal.enablePhoneMirroring();
++     }
++
++    public void disablePhoneMirroring() {
++        mGlobal.disablePhoneMirroring();
++     }
++
++    public boolean isPhoneMirroringEnabled() {
++        return mGlobal.isPhoneMirroringEnabled();
++     }
++
+     /**
+      * Starts scanning for available Wifi displays.
+      * The results are sent as a {@link #ACTION_WIFI_DISPLAY_STATUS_CHANGED} broadcast.
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/hardware/display/IDisplayManager.aidl /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/IDisplayManager.aidl
+--- /media/ssd/patches/frameworks/base/core/java/android/hardware/display/IDisplayManager.aidl	2020-03-08 02:58:17.400800035 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/hardware/display/IDisplayManager.aidl	2019-04-25 04:09:43.000000000 +0300
+@@ -87,6 +87,12 @@
+ 
+     // Get a stable metric for the device's display size. No permissions required.
+     Point getStableDisplaySize();
++ 
++    void enablePhoneMirroring();
++
++    void disablePhoneMirroring();
++
++    boolean isPhoneMirroringEnabled();
+ 
+     // Requires BRIGHTNESS_SLIDER_USAGE permission.
+     ParceledListSlice getBrightnessEvents(String callingPackage);
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/mperspective/IPerspectiveService.aidl /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/IPerspectiveService.aidl
+--- /media/ssd/patches/frameworks/base/core/java/android/mperspective/IPerspectiveService.aidl	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/IPerspectiveService.aidl	2019-04-25 04:11:00.000000000 +0300
+@@ -0,0 +1,17 @@
++package android.mperspective;
++
++import android.mperspective.IPerspectiveServiceCallback;
++
++/**
++ * @hide
++ */
++interface IPerspectiveService {
++
++    void startDesktopPerspective();
++
++    void stopDesktopPerspective();
++
++    boolean isDesktopRunning();
++
++    void registerCallback(IPerspectiveServiceCallback callback);
++}
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/mperspective/IPerspectiveServiceCallback.aidl /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/IPerspectiveServiceCallback.aidl
+--- /media/ssd/patches/frameworks/base/core/java/android/mperspective/IPerspectiveServiceCallback.aidl	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/IPerspectiveServiceCallback.aidl	2019-04-25 04:11:35.000000000 +0300
+@@ -0,0 +1,9 @@
++package android.mperspective;
++
++/**
++ * Created by pdsouza on 11/10/15.
++ * @hide
++ */
++interface IPerspectiveServiceCallback {
++    oneway void onPerspectiveEvent(int event);
++}
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/mperspective/Perspective.java /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/Perspective.java
+--- /media/ssd/patches/frameworks/base/core/java/android/mperspective/Perspective.java	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/Perspective.java	2019-04-25 04:12:26.000000000 +0300
+@@ -0,0 +1,30 @@
++package android.mperspective;
++
++/**
++ * Perspectives are interfaces to hardware.
++ *
++ * @hide
++ */
++public class Perspective {
++
++    public static final int STATE_STOPPED = 0;
++    public static final int STATE_STARTING = 1;
++    public static final int STATE_RUNNING = 2;
++    public static final int STATE_STOPPING = 3;
++
++    public static String stateToString(int state) {
++        switch (state) {
++            case Perspective.STATE_STARTING:
++                return "STARTING";
++            case Perspective.STATE_RUNNING:
++                return "RUNNING";
++            case Perspective.STATE_STOPPING:
++                return "STOPPING";
++            case Perspective.STATE_STOPPED:
++                return "STOPPED";
++            default:
++                return "UNKNOWN";
++        }
++    }
++
++}
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/mperspective/PerspectiveManager.java /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/PerspectiveManager.java
+--- /media/ssd/patches/frameworks/base/core/java/android/mperspective/PerspectiveManager.java	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/mperspective/PerspectiveManager.java	2019-04-25 04:13:37.000000000 +0300
+@@ -0,0 +1,123 @@
++package android.mperspective;
++
++import android.os.Handler;
++import android.os.Looper;
++import android.os.Message;
++import android.os.RemoteException;
++import android.util.Log;
++
++/**
++ * System private Java interface to PerspectiveService.
++ *
++ * @hide
++ */
++public final class PerspectiveManager {
++    private static final String TAG = "PerspectiveManager";
++
++    private final IPerspectiveService mService;
++    private IPerspectiveServiceCallback mCallback;
++    private PerspectiveListenerHandler mListener;
++
++    public PerspectiveManager(final IPerspectiveService service) {
++        mService = service;
++    }
++
++    public void startDesktopPerspective() {
++        try {
++            mService.startDesktopPerspective();
++        } catch (RemoteException e) {
++            Log.e(TAG, "RemoteException starting desktop perspective", e);
++        }
++    }
++
++    public void stopDesktopPerspective() {
++        try {
++            mService.stopDesktopPerspective();
++        } catch (RemoteException e) {
++            Log.e(TAG, "RemoteException stopping desktop perspective", e);
++        }
++    }
++
++    public boolean isDesktopRunning() {
++        try {
++            return mService.isDesktopRunning();
++        } catch (RemoteException e) {
++            Log.e(TAG, "RemoteException checking desktop perspective state", e);
++        }
++        return false;
++    }
++
++    public void registerPerspectiveListener(final PerspectiveListener listener,
++                                            final Handler handler) {
++        if (listener == null) {
++            throw new IllegalArgumentException("listener cannot be null");
++        }
++
++        mListener = new PerspectiveListenerHandler(listener, handler);
++        registerCallbackIfNeeded();
++    }
++
++    public void unregisterPerspectiveListener() {
++        mListener = null;
++        // TODO: unregister from service?
++    }
++
++    private void registerCallbackIfNeeded() {
++        if (mCallback == null) {
++            mCallback = new PerspectiveServiceCallback();
++            try {
++                mService.registerCallback(mCallback);
++            } catch (RemoteException e) {
++                Log.e(TAG, "RemoteException registering perspective callback", e);
++                mCallback = null;
++            }
++        }
++    }
++
++    private final class PerspectiveServiceCallback extends IPerspectiveServiceCallback.Stub {
++        @Override
++        public void onPerspectiveEvent(int event) {
++            if (mListener != null) {
++                mListener.sendPerspectiveEvent(event);
++            }
++        }
++    }
++
++    /**
++     * This class ensures that events are delivered to a listener on
++     * its original registering thread or specified alternate Handler.
++     */
++    private static final class PerspectiveListenerHandler extends Handler {
++        private PerspectiveListener mListener;
++
++        public PerspectiveListenerHandler(final PerspectiveListener listener,
++                                          final Handler handler) {
++            super(handler != null ? handler.getLooper() : Looper.myLooper());
++            mListener = listener;
++        }
++
++        public void sendPerspectiveEvent(int event) {
++            sendEmptyMessage(event);
++        }
++
++        @Override
++        public void handleMessage(Message msg) {
++            mListener.onPerspectiveStateChanged(msg.what);
++        }
++    }
++
++    /**
++     * Listen for perspective lifecycle events.
++     */
++    public interface PerspectiveListener {
++
++        /**
++         *
++         * @param state One of {@link Perspective#STATE_STARTING},
++         *              {@link Perspective#STATE_RUNNING},
++         *              {@link Perspective#STATE_STOPPING},
++         *              {@link Perspective#STATE_STOPPED},
++         */
++        void onPerspectiveStateChanged(int state);
++    }
++}
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/android/view/Display.java /media/hdd/lineage_16/frameworks/base/core/java/android/view/Display.java
+--- /media/ssd/patches/frameworks/base/core/java/android/view/Display.java	2020-03-08 02:58:17.508800516 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/android/view/Display.java	2019-04-25 04:14:50.000000000 +0300
+@@ -99,6 +99,8 @@
+      */
+     public static final int DEFAULT_DISPLAY = 0;
+ 
++	public static final int DEFAULT_DESKTOP_DISPLAY = 1;
++
+     /**
+      * Invalid display id.
+      */
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/java/com/android/internal/logging/MetricsLogger.java /media/hdd/lineage_16/frameworks/base/core/java/com/android/internal/logging/MetricsLogger.java
+--- /media/ssd/patches/frameworks/base/core/java/com/android/internal/logging/MetricsLogger.java	2020-03-08 02:58:17.576800818 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/java/com/android/internal/logging/MetricsLogger.java	2019-04-25 04:15:37.000000000 +0300
+@@ -47,6 +47,13 @@
+     public static final int VIEW_UNKNOWN = MetricsEvent.VIEW_UNKNOWN;
+     public static final int LOGTAG = EventLogTags.SYSUI_MULTI_ACTION;
+ 
++    //maru
++
++    public static final int QS_MMIRROR_TOGGLE = 1000;
++    public static final int QS_MDESKTOP_TOGGLE = 1001;
++    public static final int MDESKTOP_TWEAKS = 1002;
++
++
+     public void write(LogMaker content) {
+         if (content.getType() == MetricsEvent.TYPE_UNKNOWN) {
+             content.setType(MetricsEvent.TYPE_ACTION);
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/res/res/drawable/ic_mdesktop.xml /media/hdd/lineage_16/frameworks/base/core/res/res/drawable/ic_mdesktop.xml
+--- /media/ssd/patches/frameworks/base/core/res/res/drawable/ic_mdesktop.xml	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/res/res/drawable/ic_mdesktop.xml	2019-04-25 04:16:39.000000000 +0300
+@@ -0,0 +1,14 @@
++<!--
++    Derived from Material Design icon "desktop windows"
++    http://www.google.com/design/icons/#ic_desktop_windows
++-->
++
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="48dp"
++        android:height="48dp"
++        android:viewportWidth="24.0"
++        android:viewportHeight="24.0">
++        <path
++            android:fillColor="#FFFFFFFF"
++            android:pathData="M21,2H3c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h7v2H8v2h8v-2h-2v-2h7c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm0,14H3V4h18v12z"/>
++</vector>
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/res/res/values/strings.xml /media/hdd/lineage_16/frameworks/base/core/res/res/values/strings.xml
+--- /media/ssd/patches/frameworks/base/core/res/res/values/strings.xml	2020-03-08 02:58:18.248803807 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/res/res/values/strings.xml	2019-04-25 04:18:24.000000000 +0300
+@@ -4796,6 +4796,14 @@
+     <!-- Label used by Telephony code, assigned as the display name for conference calls [CHAR LIMIT=60] -->
+     <string name="conference_call">Conference Call</string>
+ 
++        <!-- maru -->
++    <string name="desktop_notification_title_starting">Desktop starting...</string>
++    <string name="desktop_notification_title_stopping">Desktop stopping...</string>
++    <string name="desktop_notification_title_running">Desktop running</string>
++    <string name="desktop_notification_msg">Touch to manage desktop settings.</string>
++    <!-- /maru -->
++
++
+     <!-- Window title for a tooltip [CHAR LIMIT=NONE] -->
+     <string name="tooltip_popup_title">Tooltip</string>
+ 
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/core/res/res/values/symbols.xml /media/hdd/lineage_16/frameworks/base/core/res/res/values/symbols.xml
+--- /media/ssd/patches/frameworks/base/core/res/res/values/symbols.xml	2020-03-08 02:58:18.252803823 +0200
++++ /media/hdd/lineage_16/frameworks/base/core/res/res/values/symbols.xml	2019-04-25 04:19:23.000000000 +0300
+@@ -3016,6 +3016,16 @@
+   <java-symbol type="drawable" name="lockscreen_notselected" />
+   <java-symbol type="drawable" name="lockscreen_selected" />
+ 
++  <!-- maru -->
++  <!-- From PerspectiveService -->
++  <java-symbol type="string" name="desktop_notification_title_starting" />
++  <java-symbol type="string" name="desktop_notification_title_stopping" />
++  <java-symbol type="string" name="desktop_notification_title_running" />
++  <java-symbol type="string" name="desktop_notification_msg" />
++  <java-symbol type="drawable" name="ic_mdesktop" />
++  <!-- /maru -->
++
++
+   <java-symbol type="string" name="notification_header_divider_symbol_with_spaces" />
+   <java-symbol type="string" name="config_defaultCellBroadcastReceiverPkg" />
+ 
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SettingsLib/src/com/android/settingslib/drawer/CategoryKey.java /media/hdd/lineage_16/frameworks/base/packages/SettingsLib/src/com/android/settingslib/drawer/CategoryKey.java
+--- /media/ssd/patches/frameworks/base/packages/SettingsLib/src/com/android/settingslib/drawer/CategoryKey.java	2020-03-08 02:58:21.784819530 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SettingsLib/src/com/android/settingslib/drawer/CategoryKey.java	2019-05-03 05:21:07.000000000 +0300
+@@ -52,6 +52,9 @@
+     public static final String CATEGORY_NIGHT_DISPLAY =
+             "com.android.settings.category.ia.night_display";
+ 
++	public static final String CATEGORY_MARU_DESKTOP =
++ 		"com.android.settings.category.ia.desktop";
++
+     public static final Map<String, String> KEY_COMPAT_MAP;
+ 
+     static {
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_disabled.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_disabled.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_disabled.xml	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_disabled.xml	2019-04-25 04:20:42.000000000 +0300
+@@ -0,0 +1,21 @@
++<!--
++    Copyright (C) 2015 Preetam D'Souza
++
++-->
++
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="48dp"
++        android:height="48dp"
++        android:viewportWidth="24.0"
++        android:viewportHeight="24.0">
++        <path
++            android:fillColor="#4DFFFFFF"
++            android:pathData="M21,2H3c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h7v2H8v2h8v-2h-2v-2h7c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm0,14H3V4h18v12z"/>
++<!--     <group
++        android:name="translationGroup"
++        android:translateY="0" >
++        <path
++            android:fillColor="#4DFFFFFF"
++            android:pathData="M21,2H3c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h7v2H8v2h8v-2h-2v-2h7c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm0,14H3V4h18v12z"/>
++    </group> -->
++</vector>
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_enabled.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_enabled.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_enabled.xml	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mdesktop_enabled.xml	2019-04-25 04:21:24.000000000 +0300
+@@ -0,0 +1,14 @@
++<!--
++    Copyright (C) 2015 Preetam D'Souza
++
++-->
++
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="48dp"
++        android:height="48dp"
++        android:viewportWidth="24.0"
++        android:viewportHeight="24.0">
++        <path
++            android:fillColor="#FFFFFFFF"
++            android:pathData="M21,2H3c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h7v2H8v2h8v-2h-2v-2h7c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm0,14H3V4h18v12z"/>
++</vector>
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_disabled.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_disabled.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_disabled.xml	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_disabled.xml	2019-04-25 04:22:17.000000000 +0300
+@@ -0,0 +1,20 @@
++<!--
++    Copyright (C) 2015 Preetam D'Souza
++
++-->
++
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="48dp"
++        android:height="48dp"
++        android:viewportWidth="24.0"
++        android:viewportHeight="24.0">
++        <path
++            android:name="monitor"
++            android:fillColor="#4DFFFFFF"
++           android:pathData="m3 2c-1.1 0-2 0.9-2 2v9h2v-9h18v12h-13.327v2h2.327v2h-2v2h8v-2h-2v-2h7c1.1 0 2-0.9 2-2v-12c0-1.1-0.9-2-2-2z"/>
++
++        <path
++            android:name="phone"
++            android:fillColor="#4DFFFFFF"
++            android:pathData="m2.2324 13.946c-0.4027 0-0.7324 0.33-0.7324 0.733v6.5889c0 0.402 0.3297 0.732 0.7324 0.732h3.6602c0.4027 0 0.7324-0.33 0.7324-0.732v-6.5889c0-0.40268-0.32974-0.72852-0.73242-0.72852l-3.6602-0.0039zm0 1.4639h3.6602v5.125h-3.6602v-5.125zm0.40625 0.52734v3.9863h2.8477v-3.9863h-2.8477z"/>
++</vector>
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_enabled.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_enabled.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_enabled.xml	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/drawable/ic_mirroring_enabled.xml	2019-04-25 04:23:39.000000000 +0300
+@@ -0,0 +1,20 @@
++<!--
++    Copyright (C) 2015 Preetam D'Souza
++
++-->
++
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++        android:width="48dp"
++        android:height="48dp"
++        android:viewportWidth="24.0"
++        android:viewportHeight="24.0">
++        <path
++            android:name="monitor"
++            android:fillColor="#FFFFFFFF"
++            android:pathData="m3 2c-1.1 0-2 0.9-2 2v9h2v-9h18v12h-13.327v2h2.327v2h-2v2h8v-2h-2v-2h7c1.1 0 2-0.9 2-2v-12c0-1.1-0.9-2-2-2h-18zm1 3v8h3.6729v2h12.327v-10h-16z"/>
++
++        <path
++            android:name="phone"
++            android:fillColor="#FFFFFFFF"
++            android:pathData="m2.2324 13.946c-0.4027 0-0.7324 0.33-0.7324 0.733v6.5889c0 0.402 0.3297 0.732 0.7324 0.732h3.6602c0.4027 0 0.7324-0.33 0.7324-0.732v-6.5889c0-0.40268-0.32974-0.72852-0.73242-0.72852l-3.6602-0.0039zm0 1.4639h3.6602v5.125h-3.6602v-5.125zm0.40625 0.52734v3.9863h2.8477v-3.9863h-2.8477z"/>
++</vector>
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/config.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/config.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/config.xml	2020-03-08 02:58:21.972820367 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/config.xml	2019-04-25 04:25:45.000000000 +0300
+@@ -123,7 +123,7 @@
+ 
+     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
+     <string name="quick_settings_tiles_stock" translatable="false">
+-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,reading_mode,sync,usb_tether,volume_panel
++        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,reading_mode,sync,usb_tether,volume_panel,mmirror
+     </string>
+ 
+     <!-- The tiles to display in QuickSettings -->
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/strings.xml /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/strings.xml
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/res/values/strings.xml	2020-03-08 02:58:21.976820385 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/res/values/strings.xml	2019-04-25 04:26:34.000000000 +0300
+@@ -1996,6 +1996,16 @@
+     <!-- accessibility label for paging indicator in quick settings [CHAR LIMITi=NONE] -->
+     <string name="accessibility_quick_settings_page">Page <xliff:g name="current_page" example="1">%1$d</xliff:g> of <xliff:g name="num_pages" example="2">%2$d</xliff:g></string>
+ 
++
++        <!-- Maru QuickSettings: MMirror [CHAR LIMIT=NONE] -->
++     <string name="quick_settings_mirroring_mode_label">Mirror screen</string>
++ 
++     <!-- Announcement made when mirroring changes to disabled (not shown on the screen). [CHAR LIMIT=NONE] -->
++     <string name="accessibility_qs_mirroring_changed_off">Screen mirroring turned off.</string>
++     <!-- Announcement made when mirroring changes to enabled (not shown on the screen). [CHAR LIMIT=NONE] -->
++     <string name="accessibility_qs_mirroring_changed_on">Screen mirroring turned on.</string>
++
++
+     <!-- Plugin control section of the tuner. Non-translatable since it should
+          not appear on production builds ever. -->
+     <string name="plugins" translatable="false">Plugins</string>
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tileimpl/QSFactoryImpl.java /media/hdd/lineage_16/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tileimpl/QSFactoryImpl.java
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tileimpl/QSFactoryImpl.java	2020-03-08 02:58:21.996820474 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tileimpl/QSFactoryImpl.java	2019-04-25 04:29:33.000000000 +0300
+@@ -53,6 +53,7 @@
+ import com.android.systemui.qs.tiles.WorkModeTile;
+ import com.android.systemui.qs.QSTileHost;
+ import com.android.systemui.util.leak.GarbageMonitor;
++import com.android.systemui.qs.tiles.MMirrorTile;
+ 
+ public class QSFactoryImpl implements QSFactory {
+ 
+@@ -127,6 +128,8 @@
+                 return new UsbTetherTile(mHost);
+             case "volume_panel":
+                 return new VolumeTile(mHost);
++            case "mmirror":
++                return new MMirrorTile(mHost);
+         }
+ 
+         // Intent tiles.
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tiles/MMirrorTile.java /media/hdd/lineage_16/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tiles/MMirrorTile.java
+--- /media/ssd/patches/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tiles/MMirrorTile.java	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/packages/SystemUI/src/com/android/systemui/qs/tiles/MMirrorTile.java	2019-04-25 04:31:25.000000000 +0300
+@@ -0,0 +1,158 @@
++/*
++ * Copyright (C) 2015 Preetam D'Souza
++ *
++ * QuickSettings HDMI mirroring toggle.
++ *
++ */
++
++package com.android.systemui.qs.tiles;
++
++import android.content.Context;
++import android.content.Intent;
++import android.hardware.display.DisplayManager;
++import android.util.Log;
++import android.view.Display;
++
++import com.android.internal.logging.MetricsLogger;
++import com.android.systemui.R;
++import com.android.systemui.plugins.qs.QSTile.BooleanState;
++import com.android.systemui.qs.QSHost;
++import com.android.systemui.qs.tileimpl.QSTileImpl;
++import java.util.HashSet;
++import java.util.Set;
++
++/** Quick settings tile: Mirror screen **/
++public class MMirrorTile extends QSTileImpl<BooleanState> {
++    private static final String TAG = "MMirrorTile";
++
++    private static final int mDisabledIcon = R.drawable.ic_mirroring_disabled;
++    private static final int mEnabledIcon = R.drawable.ic_mirroring_enabled;
++
++    private final DisplayManager mDisplayManager;
++
++    private final MDisplayListener mDisplayListener;
++    private Set<Integer> mPresentationDisplays;
++
++    private boolean mListening = false;
++
++    public MMirrorTile(QSHost host) {
++        super(host);
++
++        mDisplayManager = (DisplayManager) host.getContext()
++                .getSystemService(Context.DISPLAY_SERVICE);
++
++        mDisplayListener = new MDisplayListener();
++        mPresentationDisplays = new HashSet<Integer>();
++    }
++
++    @Override
++    public BooleanState newTileState() {
++        return new BooleanState();
++    }
++
++    @Override
++    public void handleClick() {
++        if (mState.value) {
++                mDisplayManager.disablePhoneMirroring();
++        } else {
++                mDisplayManager.enablePhoneMirroring();
++        }
++        refreshState();
++    }
++
++    @Override
++    protected void handleUpdateState(BooleanState state, Object arg) {
++        final boolean hasPresentationDisplay = !mPresentationDisplays.isEmpty();
++        state.value = mDisplayManager.isPhoneMirroringEnabled();
++        state.label = mContext.getString(R.string.quick_settings_mirroring_mode_label);
++        state.icon = ResourceIcon.get(state.value ? mEnabledIcon : mDisabledIcon);
++    }
++
++    @Override
++    protected String composeChangeAnnouncement() {
++        if (mState.value) {
++            return mContext.getString(R.string.accessibility_qs_mirroring_changed_on);
++        } else {
++            return mContext.getString(R.string.accessibility_qs_mirroring_changed_off);
++        }
++    }
++
++    @Override
++    public int getMetricsCategory() {
++        return MetricsLogger.QS_MMIRROR_TOGGLE;
++    }
++
++    @Override
++    public Intent getLongClickIntent() {
++        return null;
++    }
++
++    @Override
++    public CharSequence getTileLabel() {
++        return mContext.getString(R.string.quick_settings_mirroring_mode_label);
++    }
++
++    @Override
++    public void handleSetListening(boolean listening) {
++        // defense against duplicate registers
++        if (mListening == listening) {
++            return;
++        }
++
++        if (listening) {
++            // Log.d(TAG, "registering mDisplayListener");
++            mDisplayListener.sync();
++            mDisplayManager.registerDisplayListener(mDisplayListener, null);
++        } else {
++            // Log.d(TAG, "unregistering mDisplayListener");
++            mDisplayManager.unregisterDisplayListener(mDisplayListener);
++        }
++        mListening = listening;
++    }
++
++    private class MDisplayListener implements DisplayManager.DisplayListener {
++        @Override
++        public void onDisplayAdded(int displayId) {
++            Display display = mDisplayManager.getDisplay(displayId);
++
++            if (display.isPublicPresentation()) {
++                if (mPresentationDisplays.isEmpty()) {
++                    // the first presentation display was added
++                    refreshState();
++                }
++                mPresentationDisplays.add(displayId);
++            }
++        }
++
++        @Override
++        public void onDisplayRemoved(int displayId) {
++
++            if (mPresentationDisplays.remove(displayId) && mPresentationDisplays.isEmpty()) {
++
++                refreshState();
++
++            }
++        }
++
++        @Override
++        public void onDisplayChanged(int displayId) { /* no-op */ }
++
++        /**
++         * We may miss a display event since listeners are unregistered
++         * when the QS panel is hidden.
++         *
++         * Call this before registering to make sure the initial
++         * state is up-to-date.
++         */
++        public void sync() {
++            mPresentationDisplays.clear();
++            Display[] displays = mDisplayManager
++                    .getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
++            for (Display display : displays) {
++                if (display.isPublicPresentation()) {
++                    mPresentationDisplays.add(display.getDisplayId());
++                }
++            }
++        }
++    }
++}
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/proto/src/metrics_constants.proto /media/hdd/lineage_16/frameworks/base/proto/src/metrics_constants.proto
+--- /media/ssd/patches/frameworks/base/proto/src/metrics_constants.proto	2020-03-08 02:58:22.144821133 +0200
++++ /media/hdd/lineage_16/frameworks/base/proto/src/metrics_constants.proto	2019-05-03 05:23:32.000000000 +0300
+@@ -6492,6 +6492,7 @@
+     // OS: Q
+     ACTION_EMERGENCY_DIALER_FROM_POWER_MENU = 1569;
+ 
++    SETTINGS_DESKTOP_CATEGORY = 9001;
+     // ---- End Q Constants, all Q constants go above this line ----
+ 
+     // Add new aosp constants above this line.
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java	2020-03-08 02:58:22.192821345 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java	2019-05-10 16:30:07.000000000 +0300
+@@ -2125,6 +2125,7 @@
+                 }
+             } break;
+             case SHOW_FINGERPRINT_ERROR_UI_MSG: {
++            	/*
+                 if (mShowDialogs) {
+                     AlertDialog d = new BaseErrorDialog(mUiContext);
+                     d.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ERROR);
+@@ -2135,6 +2136,7 @@
+                             obtainMessage(DISMISS_DIALOG_UI_MSG, d));
+                     d.show();
+                 }
++                */
+             } break;
+             case SHOW_COMPAT_MODE_DIALOG_UI_MSG: {
+                 synchronized (ActivityManagerService.this) {
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/DisplayDeviceInfo.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/DisplayDeviceInfo.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/DisplayDeviceInfo.java	2020-03-08 02:58:22.216821453 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/DisplayDeviceInfo.java	2019-04-25 04:33:57.000000000 +0300
+@@ -103,6 +103,13 @@
+      */
+     public static final int FLAG_DESTROY_CONTENT_ON_REMOVAL = 1 << 10;
+ 
++     /**
++     *
++     * Flag: Indicates that this display should be considered the
++     * default external display.
++     */
++    public static final int FLAG_DEFAULT_EXTERNAL_DISPLAY = 1 << 31;
++
+     /**
+      * Flag: The display cutout of this display is masked.
+      * @hide
+@@ -459,6 +466,10 @@
+         if ((flags & FLAG_CAN_SHOW_WITH_INSECURE_KEYGUARD) != 0) {
+             msg.append(", FLAG_CAN_SHOW_WITH_INSECURE_KEYGUARD");
+         }
++        if ((flags & FLAG_DEFAULT_EXTERNAL_DISPLAY) != 0) {
++            msg.append(", FLAG_DEFAULT_EXTERNAL_DISPLAY");
++        }
++
+         if ((flags & FLAG_MASK_DISPLAY_CUTOUT) != 0) {
+             msg.append(", FLAG_MASK_DISPLAY_CUTOUT");
+         }
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/DisplayManagerService.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/DisplayManagerService.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/DisplayManagerService.java	2020-03-08 02:58:22.216821453 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/DisplayManagerService.java	2019-04-25 04:59:31.000000000 +0300
+@@ -186,6 +186,9 @@
+     // services should be started.  This option may disable certain display adapters.
+     public boolean mOnlyCore;
+ 
++	private boolean mPhoneMirroringEnabled;
++
++
+     // True if the display manager service should pretend there is only one display
+     // and only tell applications about the existence of the default logical display.
+     // The display manager can still mirror content to secondary displays but applications
+@@ -206,12 +209,29 @@
+     // List of all logical displays indexed by logical display id.
+     private final SparseArray<LogicalDisplay> mLogicalDisplays =
+             new SparseArray<LogicalDisplay>();
+-    private int mNextNonDefaultDisplayId = Display.DEFAULT_DISPLAY + 1;
++    
++    private int mNextNonDefaultDisplayId = Display.DEFAULT_DESKTOP_DISPLAY + 1;
+ 
+     // List of all display transaction listeners.
+     private final CopyOnWriteArrayList<DisplayTransactionListener> mDisplayTransactionListeners =
+             new CopyOnWriteArrayList<DisplayTransactionListener>();
+ 
++    private void setPhoneMirroringEnabledInternal(boolean enabled) {
++        synchronized(mSyncRoot) {
++            if (mPhoneMirroringEnabled != enabled) {
++                Slog.d(TAG, "setPhoneMirroringEnabledInternal -> " + enabled);
++                mPhoneMirroringEnabled = enabled;
++                scheduleTraversalLocked(false);
++            }
++        }
++    }
++
++    private boolean isPhoneMirroringEnabledInternal() {
++        synchronized(mSyncRoot) {
++		return mPhoneMirroringEnabled;
++        }
++    }
++
+     // Display power controller.
+     private DisplayPowerController mDisplayPowerController;
+ 
+@@ -1264,6 +1284,8 @@
+         final DisplayDeviceInfo info = device.getDisplayDeviceInfoLocked();
+         final boolean ownContent = (info.flags & DisplayDeviceInfo.FLAG_OWN_CONTENT_ONLY) != 0;
+ 
++		int layerStackOverride = -1;
++
+         // Find the logical display that the display device is showing.
+         // Certain displays only ever show their own content.
+         LogicalDisplay display = findLogicalDisplayForDeviceLocked(device);
+@@ -1274,7 +1296,23 @@
+                 display = null;
+             }
+             if (display == null) {
+-                display = mLogicalDisplays.get(Display.DEFAULT_DISPLAY);
++                
++                // This is the mirroring case.
++                //
++                // We basically swap between mirroring default display or desktop display.
++                // In the case of default display, there is a logical display around. But
++                // for desktop display, we don't have a logical display and just set the
++                // layerstack of the display device to the desktop's reserved layerstack.
++                if (isPhoneMirroringEnabledInternal()) {
++                    // Stock phone mirroring path
++                    display = mLogicalDisplays.get(Display.DEFAULT_DISPLAY);
++                } else {
++                    // Desktop mirroring path
++                    // Use the associated logical display for this device as usual
++                    display = findLogicalDisplayForDeviceLocked(device);
++                    // ...but override the logical display's layerstack with the desktop layerstack
++                    layerStackOverride = Display.DEFAULT_DESKTOP_DISPLAY;
++                }
+             }
+         }
+ 
+@@ -1285,8 +1323,8 @@
+                     + device.getDisplayDeviceInfoLocked());
+             return;
+         }
+-        display.configureDisplayLocked(t, device, info.state == Display.STATE_OFF);
+-
++        display.configureDisplayLocked(t, device, info.state == Display.STATE_OFF , layerStackOverride);
++ 
+         // Update the viewports if needed.
+         if (!mDefaultViewport.valid
+                 && (info.flags & DisplayDeviceInfo.FLAG_DEFAULT_DISPLAY) != 0) {
+@@ -1620,6 +1658,36 @@
+             }
+         }
+ 
++        @Override // Binder call
++        public void enablePhoneMirroring() {
++            final long token = Binder.clearCallingIdentity();
++            try {
++	          setPhoneMirroringEnabledInternal(true);
++            } finally {
++                Binder.restoreCallingIdentity(token);
++            }
++        }
++
++        @Override // Binder call
++        public void disablePhoneMirroring() {
++            final long token = Binder.clearCallingIdentity();
++            try {
++                 setPhoneMirroringEnabledInternal(false);
++            } finally {
++                Binder.restoreCallingIdentity(token);
++            }
++        }
++
++        @Override // Binder call
++        public boolean isPhoneMirroringEnabled() {
++            final long token = Binder.clearCallingIdentity();
++            try {
++                return isPhoneMirroringEnabledInternal();
++            } finally {
++                Binder.restoreCallingIdentity(token);
++            }
++         }
++
+         /**
+          * Returns the list of all display ids.
+          */
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/LocalDisplayAdapter.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/LocalDisplayAdapter.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/LocalDisplayAdapter.java	2020-03-08 02:58:22.220821470 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/LocalDisplayAdapter.java	2019-04-25 05:02:14.000000000 +0300
+@@ -442,6 +442,13 @@
+                     if (res.getBoolean(com.android.internal.R.bool.config_localDisplaysPrivate)) {
+                         mInfo.flags |= DisplayDeviceInfo.FLAG_PRIVATE;
+                     }
++
++ 
++                    if (SystemProperties.getBoolean("persist.m.desktop.hdmi", true)) {
++                        /* HDMI displays are the default external display */
++                        mInfo.flags |= DisplayDeviceInfo.FLAG_DEFAULT_EXTERNAL_DISPLAY;
++                    }
++
+                 }
+             }
+             return mInfo;
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/LogicalDisplay.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/LogicalDisplay.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/display/LogicalDisplay.java	2020-03-08 02:58:22.220821470 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/display/LogicalDisplay.java	2019-04-25 05:12:46.000000000 +0300
+@@ -322,29 +322,25 @@
+         }
+     }
+ 
+-    /**
+-     * Applies the layer stack and transformation to the given display device
+-     * so that it shows the contents of this logical display.
+-     *
+-     * We know that the given display device is only ever showing the contents of
+-     * a single logical display, so this method is expected to blow away all of its
+-     * transformation properties to make it happen regardless of what the
+-     * display device was previously showing.
+-     *
+-     * The caller must have an open Surface transaction.
+-     *
+-     * The display device may not be the primary display device, in the case
+-     * where the display is being mirrored.
+-     *
+-     * @param device The display device to modify.
+-     * @param isBlanked True if the device is being blanked.
+-     */
++ 
+     public void configureDisplayLocked(SurfaceControl.Transaction t,
+             DisplayDevice device,
+-            boolean isBlanked) {
++            boolean isBlanked )
++    {
++       configureDisplayLocked(t,device,isBlanked,-1);
++    }
++
++ 
++    public void configureDisplayLocked(SurfaceControl.Transaction t,
++            DisplayDevice device,
++            boolean isBlanked,int layerStackOverride) {
+         // Set the layer stack.
+-        device.setLayerStackLocked(t, isBlanked ? BLANK_LAYER_STACK : mLayerStack);
++ 
++         int layerStack = layerStackOverride < 0 ? mLayerStack : layerStackOverride;
++         device.setLayerStackLocked(t, isBlanked ? BLANK_LAYER_STACK : layerStack);
++    
+ 
++    	//
+         // Set the color mode and mode.
+         if (device == mPrimaryDisplayDevice) {
+             device.requestDisplayModesLocked(
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/java/com/android/server/mperspective/PerspectiveService.java /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/mperspective/PerspectiveService.java
+--- /media/ssd/patches/frameworks/base/services/core/java/com/android/server/mperspective/PerspectiveService.java	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/java/com/android/server/mperspective/PerspectiveService.java	2019-05-03 07:52:22.000000000 +0300
+@@ -0,0 +1,463 @@
++/*
++ * Copyright 2015-2016 Preetam J. D'Souza
++ * Copyright 2016 The Maru OS Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.server.mperspective;
++
++import android.app.Notification;
++import android.app.NotificationManager;
++import android.app.PendingIntent;
++import android.content.ComponentName;
++import android.content.ContentResolver;
++import android.content.Context;
++import android.content.Intent;
++import android.hardware.display.DisplayManager;
++import android.mperspective.IPerspectiveService;
++import android.mperspective.IPerspectiveServiceCallback;
++import android.mperspective.Perspective;
++import android.os.Binder;
++import android.os.Handler;
++import android.os.IBinder;
++import android.os.Looper;
++import android.os.Message;
++import android.os.RemoteException;
++import android.os.SystemProperties;
++import android.os.UserHandle;
++import android.provider.Settings;
++import android.util.Log;
++import android.util.SparseArray;
++import android.view.Display;
++
++import com.android.internal.R;
++import com.android.internal.notification.SystemNotificationChannels;
++import com.android.server.FgThread;
++import com.android.server.SystemService;
++
++/**
++ * PerspectiveService is the central entity in perspective management.
++ *
++ * Instead of the standard industry practice of strong-coupling a specific
++ * interface to hardware, multiple perspectives can be managed (sometimes in parallel)
++ * to better make use of context.
++ *
++ * Currently, Maru defines a mobile and desktop perspective that can be
++ * run in parallel depending on the computing context of the user.
++ *
++ * Concurrency is handled by locking global state. All changes to state and
++ * subsequent side effects (e.g. dispatching lifecycle events to listeners or updating UI)
++ * are run under a single locked transaction.
++ *
++ * Note that the actual perspective lifecycle actions are carried out via
++ * JNI calls to a native perspectived daemon.
++ */
++public class PerspectiveService extends IPerspectiveService.Stub {
++
++    private static final String TAG = "PerspectiveService";
++
++    public static class Lifecycle extends SystemService {
++        private PerspectiveService mPerspectiveService;
++
++        public Lifecycle(Context context) {
++            super(context);
++        }
++
++        @Override
++        public void onStart() {
++            mPerspectiveService = new PerspectiveService(getContext());
++            publishBinderService(Context.PERSPECTIVE_SERVICE, mPerspectiveService);
++        }
++
++        @Override
++        public void onBootPhase(int phase) {
++            if (phase == SystemService.PHASE_ACTIVITY_MANAGER_READY) {
++                mPerspectiveService.systemReady();
++            }
++        }
++    }
++
++    private Context mContext;
++    private ContentResolver mResolver;
++    private DisplayManager mDisplayManager;
++    private NotificationManager mNotificationManager;
++
++    // wrapper to sp<IPerspectiveService>
++    private long mNativeClient;
++
++    // global state lock
++    private final Object mLock = new Object();
++
++    private final SparseArray<CallbackWrapper> mCallbacks;
++
++    private int mDesktopState;
++
++    private boolean mPublicPresentationAutoStart = true;
++    private final MDisplayListener mDisplayListener;
++
++    private final int mDesktopNotificationId = R.string.desktop_notification_msg;
++    private boolean mShowingDesktopNotification = false;
++
++    private final PerspectiveHandler mHandler;
++    private static final int MSG_START_DESKTOP = 0;
++    private static final int MSG_STOP_DESKTOP = 1;
++    private static final int MSG_UPDATE_DESKTOP_STATE = 2;
++    private static final int MSG_DISABLE_DESKTOP_INTERACTIVE = 3;
++    private static final int MSG_ENABLE_DESKTOP_INTERACTIVE = 4;
++
++    private static final String PROPERTY_MARUOS_DESKTOP_INTERACTIVE = "sys.maruos.desktop.interactive";
++
++    public PerspectiveService(Context context) {
++        mContext = context;
++        mResolver = mContext == null ? null : mContext.getContentResolver();
++        mDisplayListener = new MDisplayListener();
++        mCallbacks = new SparseArray<CallbackWrapper>();
++        mHandler = new PerspectiveHandler(FgThread.get().getLooper());
++    }
++
++    private void systemReady() {
++        mDisplayManager = (DisplayManager) mContext
++                .getSystemService(Context.DISPLAY_SERVICE);
++        mDisplayManager.registerDisplayListener(mDisplayListener, FgThread.getHandler());
++
++        mNotificationManager =(NotificationManager) mContext
++                .getSystemService(Context.NOTIFICATION_SERVICE);
++
++        mNativeClient = nativeCreateClient();
++    }
++
++    private void scheduleStartDesktopPerspective() {
++        mHandler.sendEmptyMessage(MSG_START_DESKTOP);
++    }
++
++    private void scheduleStopDesktopPerspective() {
++        mHandler.sendEmptyMessage(MSG_STOP_DESKTOP);
++    }
++
++    private void scheduleUpdateDesktopState() {
++        mHandler.sendEmptyMessage(MSG_UPDATE_DESKTOP_STATE);
++    }
++
++    private void scheduleUpdateDesktopInteractiveState(boolean enable) {
++        mHandler.sendEmptyMessage(
++                enable ? MSG_ENABLE_DESKTOP_INTERACTIVE : MSG_DISABLE_DESKTOP_INTERACTIVE
++        );
++    }
++
++    private void updateDesktopInteractiveStateLocked(boolean enable) {
++        SystemProperties.set(PROPERTY_MARUOS_DESKTOP_INTERACTIVE, String.valueOf(enable));
++ 
++        if (mResolver != null) {
++                Settings.Secure.putInt(
++                        mResolver,
++                        Settings.Secure.SHOW_IME_WITH_HARD_KEYBOARD,
++                        enable ? 1 : 0
++                );
++            } else {
++                Log.w(TAG, "Set SHOW_IME_WITH_HARD_KEYBOARD failed because of the mResolver is null");
++            }
++         
++    }
++
++    private void updateDesktopStateLocked(int state) {
++        Log.d(TAG, "mDesktopState: " + Perspective.stateToString(mDesktopState)
++                + " -> " + Perspective.stateToString(state));
++        if (mDesktopState != state) {
++            mDesktopState = state;
++            updateDesktopNotificationLocked();
++            dispatchEventLocked(state);
++        }
++        boolean isPublicPresentationConnected =
++                mDisplayListener != null && mDisplayListener.isPublicPresentationConnected();
++        boolean isDesktopRunning = mDesktopState == Perspective.STATE_RUNNING;
++        boolean shouldEnableDesktopInteractiveState =
++                isPublicPresentationConnected && isDesktopRunning;
++        updateDesktopInteractiveStateLocked(shouldEnableDesktopInteractiveState);
++    }
++
++    private void updateDesktopState() {
++        synchronized (mLock) {
++            boolean isRunning = nativeIsRunning(mNativeClient);
++            updateDesktopStateLocked(isRunning ? Perspective.STATE_RUNNING
++                    : Perspective.STATE_STOPPED);
++        }
++    }
++
++    private boolean isDesktopRunningInternal() {
++        synchronized (mLock) {
++            boolean isRunning = nativeIsRunning(mNativeClient);
++            int state = isRunning ? Perspective.STATE_RUNNING
++                    : Perspective.STATE_STOPPED;
++            if (mDesktopState != state) {
++                /*
++                 * Woops, there is a discrepancy: the desktop changed state
++                 * under our feet for some reason. The good thing is that this
++                 * should be a rare case.
++                 *
++                 * This could be fixed by polling nativeIsRunning but that seems
++                 * wasteful so we'll just wait for a client to force us to check.
++                 *
++                 * Schedule an update of our state on the system thread that will
++                 * sync up our state (provided there aren't any other pending lifecycle
++                 * tasks scheduled before us that sync us up before it even runs).
++                 */
++                Log.w(TAG, "Yikes, desktop unexpectedly changed state to "
++                        + Perspective.stateToString(state)
++                        + " (expected " + Perspective.stateToString(mDesktopState) + ")");
++                scheduleUpdateDesktopState();
++            }
++            return isRunning;
++        }
++    }
++
++    private void registerCallbackInternal(final IPerspectiveServiceCallback callback,
++                                          final int pid) {
++        synchronized (mLock) {
++            if (mCallbacks.get(pid) != null) {
++                Log.w(TAG, "pid " + pid + " already has a registered callback, will be updated");
++            }
++
++            CallbackWrapper callbackWrapper = new CallbackWrapper(callback, pid);
++            try {
++                IBinder binder = callback.asBinder();
++                binder.linkToDeath(callbackWrapper, 0);
++            } catch (RemoteException e) {
++                Log.e(TAG, "Failed to register callback for pid " + pid, e);
++                return;
++            }
++            mCallbacks.put(pid, new CallbackWrapper(callback, pid));
++        }
++    }
++
++    private void dispatchEventLocked(int event) {
++        for (int i = 0; i < mCallbacks.size(); ++i) {
++            mCallbacks.valueAt(i).dispatchEvent(event);
++        }
++    }
++
++    private void onCallbackDied(CallbackWrapper callbackWrapper) {
++        synchronized (mLock) {
++            mCallbacks.remove(callbackWrapper.mPid);
++        }
++    }
++
++    @Override // Binder call
++    public void startDesktopPerspective() {
++        scheduleStartDesktopPerspective();
++    }
++
++    @Override // Binder call
++    public void stopDesktopPerspective() {
++        scheduleStopDesktopPerspective();
++    }
++
++    @Override // Binder call
++    public boolean isDesktopRunning() {
++        return isDesktopRunningInternal();
++    }
++
++    @Override // Binder call
++    public void registerCallback(IPerspectiveServiceCallback callback) {
++        if (callback == null) {
++            throw new IllegalArgumentException("callback cannot be null");
++        }
++
++        registerCallbackInternal(callback, Binder.getCallingPid());
++    }
++
++    private void updateDesktopNotificationLocked() {
++        if (mDesktopState == Perspective.STATE_STOPPED) {
++            if (mShowingDesktopNotification) {
++                mNotificationManager.cancel(mDesktopNotificationId);
++                mShowingDesktopNotification = false;
++            }
++        } else {
++            int title = R.string.desktop_notification_title_running;
++            if (mDesktopState == Perspective.STATE_STARTING) {
++                title = R.string.desktop_notification_title_starting;
++            } else if (mDesktopState == Perspective.STATE_STOPPING) {
++                title = R.string.desktop_notification_title_stopping;
++            }
++
++            final int msg = R.string.desktop_notification_msg;
++            final int color = R.color.system_notification_accent_color;
++            final int icon = R.drawable.ic_mdesktop;
++
++            final Intent intent = Intent.makeRestartActivityTask(
++                    new ComponentName("com.android.settings",
++                            "com.android.settings.Settings$DesktopDashboardActivity"));
++            final PendingIntent pendingIntent = PendingIntent.getActivityAsUser(mContext, 0,
++                    intent, 0, null, UserHandle.CURRENT);
++
++            final Notification notification = new Notification.Builder(mContext, SystemNotificationChannels.ALERTS)
++                    .setContentTitle(mContext.getText(title))
++                    .setContentText(mContext.getText(msg))
++                    .setTicker(mContext.getText(title))
++                    .setSmallIcon(icon)
++                    .setContentIntent(pendingIntent)
++                    .setOngoing(true)
++                    .setColor(mContext.getColor(color))
++                    .setVisibility(Notification.VISIBILITY_PUBLIC)
++                    .build();
++
++            mNotificationManager.notifyAsUser(null, mDesktopNotificationId, notification,
++                    UserHandle.ALL);
++            mShowingDesktopNotification = true;
++        }
++    }
++
++    /**
++     * Convenience wrapper for managing client callback death.
++     */
++    private final class CallbackWrapper implements DeathRecipient {
++        private final IPerspectiveServiceCallback mCallback;
++        private final int mPid;
++
++        public CallbackWrapper(final IPerspectiveServiceCallback callback, final int pid) {
++            mCallback = callback;
++            mPid = pid;
++        }
++
++        @Override
++        public void binderDied() {
++            onCallbackDied(this);
++        }
++
++        public void dispatchEvent(int event) {
++            try {
++                mCallback.onPerspectiveEvent(event);
++            } catch (RemoteException e) {
++                Log.d(TAG, "Failed to dispatch event to pid " + mPid, e);
++                binderDied();
++            }
++        }
++    }
++
++    /**
++     * Defer most work here for a few reasons:
++     *  (1) Avoid blocking Binder clients for expensive tasks, particularly the UI thread
++     *  (2) Avoid permission issues running stuff under Binder client context
++     */
++    private class PerspectiveHandler extends Handler {
++        public PerspectiveHandler(Looper looper) {
++            super(looper);
++        }
++
++        private void startDesktopPerspectiveInternal() {
++            synchronized (mLock) {
++                if (mDesktopState == Perspective.STATE_STOPPED) {
++                    updateDesktopStateLocked(Perspective.STATE_STARTING);
++
++                    boolean res = nativeStart(mNativeClient);
++                    if (res) {
++                        updateDesktopStateLocked(Perspective.STATE_RUNNING);
++                    } else {
++                        // unlikely
++                        Log.e(TAG, "nativeStart failed");
++                        updateDesktopStateLocked(Perspective.STATE_STOPPED);
++                    }
++                }
++            }
++        }
++
++        private void stopDesktopPerspectiveInternal() {
++            synchronized (mLock) {
++                if (mDesktopState == Perspective.STATE_RUNNING) {
++                    updateDesktopStateLocked(Perspective.STATE_STOPPING);
++
++                    boolean res = nativeStop(mNativeClient);
++                    if (res) {
++                        updateDesktopStateLocked(Perspective.STATE_STOPPED);
++                    } else {
++                        // unlikely
++                        Log.e(TAG, "nativeStop failed");
++                        updateDesktopStateLocked(Perspective.STATE_RUNNING);
++                    }
++                }
++            }
++        }
++
++        private void updateDesktopInteractiveStateInternal(boolean enable) {
++            synchronized (mLock) {
++                updateDesktopInteractiveStateLocked(enable);
++            }
++        }
++
++        @Override
++        public void handleMessage(Message msg) {
++            switch (msg.what) {
++                case MSG_START_DESKTOP:
++                    startDesktopPerspectiveInternal();
++                    break;
++                case MSG_STOP_DESKTOP:
++                    stopDesktopPerspectiveInternal();
++                    break;
++                case MSG_UPDATE_DESKTOP_STATE:
++                    updateDesktopState();
++                    break;
++                case MSG_DISABLE_DESKTOP_INTERACTIVE:
++                    updateDesktopInteractiveStateInternal(false);
++                    break;
++                case MSG_ENABLE_DESKTOP_INTERACTIVE:
++                    updateDesktopInteractiveStateInternal(true);
++                    break;
++            }
++        }
++    }
++
++    private class MDisplayListener implements DisplayManager.DisplayListener {
++        // track the public presentation display id to check if it has been removed later
++        private int mPublicPresentationDisplayId = -1;
++
++        @Override
++        public void onDisplayAdded(int displayId) {
++            Display display = mDisplayManager.getDisplay(displayId);
++
++            if (display.isPublicPresentation()) {
++                if (mPublicPresentationDisplayId == -1) {
++                    mPublicPresentationDisplayId = displayId;
++                    if (mPublicPresentationAutoStart) {
++                        Log.i(TAG, "Public presentation display added, scheduling desktop start...");
++                        scheduleStartDesktopPerspective();
++                        scheduleUpdateDesktopInteractiveState(true);
++                    }
++                }
++            }
++        }
++
++        @Override
++        public void onDisplayRemoved(int displayId) {
++            if (displayId == mPublicPresentationDisplayId) {
++                if (mPublicPresentationDisplayId != -1) {
++                    mPublicPresentationDisplayId = -1;
++                    scheduleUpdateDesktopInteractiveState(false);
++                }
++            }
++        }
++
++        @Override
++        public void onDisplayChanged(int displayId) { /* no-op */ }
++
++        boolean isPublicPresentationConnected() {
++            return mPublicPresentationDisplayId >= 0;
++        }
++    }
++
++    private static native long nativeCreateClient();
++    private static native boolean nativeStart(long ptr);
++    private static native boolean nativeStop(long ptr);
++    private static native boolean nativeIsRunning(long ptr);
++    
++
++}
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/jni/Android.bp /media/hdd/lineage_16/frameworks/base/services/core/jni/Android.bp
+--- /media/ssd/patches/frameworks/base/services/core/jni/Android.bp	2020-03-08 02:58:22.288821772 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/jni/Android.bp	2019-04-25 10:21:17.000000000 +0300
+@@ -19,6 +19,7 @@
+         "BroadcastRadio/TunerCallback.cpp",
+         "BroadcastRadio/convert.cpp",
+         "BroadcastRadio/regions.cpp",
++        "com_android_server_mperspective_PerspectiveService.cpp",
+         "com_android_server_AlarmManagerService.cpp",
+         "com_android_server_am_BatteryStatsService.cpp",
+         "com_android_server_connectivity_Vpn.cpp",
+@@ -55,6 +56,7 @@
+     include_dirs: [
+         "frameworks/base/libs",
+         "frameworks/native/services",
++        "vendor/maruos/include",
+         "system/gatekeeper/include",
+     ],
+ 
+@@ -131,11 +133,13 @@
+         "android.frameworks.schedulerservice@1.0",
+         "android.frameworks.sensorservice@1.0",
+         "vendor.lineage.power@1.0",
++        "libperspective",
+     ],
+ 
+     static_libs: [
+         "android.hardware.broadcastradio@common-utils-1x-lib",
+         "libscrypt_static",
++
+     ],
+ 
+     product_variables: {
+@@ -146,6 +150,7 @@
+                 "libarcvideobridge",
+                 "libchrome",
+                 "libmojo",
++                
+             ],
+         }
+     }
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/jni/com_android_server_mperspective_PerspectiveService.cpp /media/hdd/lineage_16/frameworks/base/services/core/jni/com_android_server_mperspective_PerspectiveService.cpp
+--- /media/ssd/patches/frameworks/base/services/core/jni/com_android_server_mperspective_PerspectiveService.cpp	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/jni/com_android_server_mperspective_PerspectiveService.cpp	2019-04-25 05:20:41.000000000 +0300
+@@ -0,0 +1,133 @@
++/*
++ * Copyright (C) 2015 Preetam D'Souza
++ *
++ * Inspired by android_view_SurfaceSession.cpp
++ *
++ */
++
++#define LOG_TAG "PerspectiveServiceJNI"
++
++#include "JNIHelp.h"
++
++#include <android_runtime/AndroidRuntime.h>
++#include <utils/Log.h>
++#include <utils/RefBase.h>
++
++#include <binder/IServiceManager.h>
++#include <perspective/IPerspectiveService.h>
++
++namespace android {
++
++static struct {
++    jfieldID mNativeClient;
++} gPerspectiveManagerClassInfo;
++
++
++/**
++ * Wrapper for IPerspectiveService Binder proxy.
++ *
++ * In order for us to preserve the Binder proxy between JNI calls
++ * we wrap up the proxy in this wrapper, allocate it on the heap,
++ * and store a pointer within the corresponding Java class that is
++ * passed as an arg to all subsequent calls.
++ *
++ * Error handling: if the remote does not exist, we always return false.
++ *
++ * *I think the sp<> handle adds a reference so that the object is
++ * not destroyed, i.e. we don't need to manually incStrong().
++ */
++class PerspectiveClient {
++public:
++    PerspectiveClient(sp<IPerspectiveService> proxy)
++        : mProxy(proxy) {
++        if (proxy != NULL) {
++            // listen for remote death
++            mDeathRecipient = new MDeathRecipient(*const_cast<PerspectiveClient*>(this));
++            IInterface::asBinder(mProxy)->linkToDeath(mDeathRecipient);
++        }
++    }
++
++    void remoteDied() {
++        mProxy = NULL;
++        mDeathRecipient = NULL;
++    }
++
++    bool start() {
++        return mProxy != NULL && mProxy->start();
++    }
++
++    bool stop() {
++        return mProxy != NULL && mProxy->stop();
++    }
++
++    bool isRunning() {
++        return mProxy != NULL && mProxy->isRunning();
++    }
++
++private:
++    sp<IPerspectiveService> mProxy;
++
++    class MDeathRecipient : public IBinder::DeathRecipient {
++        PerspectiveClient& mClient;
++        virtual void binderDied(const wp<IBinder>& who) {
++            ALOGW("PerspectiveService remote died [%p]",
++                  who.unsafe_get());
++            mClient.remoteDied();
++        }
++    public:
++        MDeathRecipient(PerspectiveClient& client) : mClient(client) { }
++    };
++    sp<MDeathRecipient> mDeathRecipient;
++};
++
++static jlong nativeCreateClient(JNIEnv* env, jclass clazz) {
++    sp<IPerspectiveService> client;
++    getService(String16("PerspectiveService"), &client);
++    if (client == NULL) {
++        ALOGE("Failed to get a handle to PerspectiveService from ServiceManager!");
++        // we go ahead and wrap up the null ptr anyway...our wrapper
++        // will always return false
++    }
++    PerspectiveClient *wrapper = new PerspectiveClient(client);
++    return reinterpret_cast<jlong>(wrapper);
++}
++
++static jboolean nativeStart(JNIEnv *env, jclass clazz, jlong ptr) {
++    PerspectiveClient *client = reinterpret_cast<PerspectiveClient*>(ptr);
++    return client->start();
++}
++
++static jboolean nativeStop(JNIEnv *env, jclass clazz, jlong ptr) {
++    PerspectiveClient *client = reinterpret_cast<PerspectiveClient*>(ptr);
++    return client->stop();
++}
++
++static jboolean nativeIsRunning(JNIEnv *env, jclass clazz, jlong ptr) {
++    PerspectiveClient *client = reinterpret_cast<PerspectiveClient*>(ptr);
++    return client->isRunning();
++}
++
++static JNINativeMethod gMethods[] = {
++    /* name, signature, funcPtr */
++    { "nativeCreateClient", "()J",
++            (void *)nativeCreateClient },
++    { "nativeStart", "(J)Z",
++            (void *)nativeStart },
++    { "nativeStop", "(J)Z",
++            (void *)nativeStop },
++    { "nativeIsRunning", "(J)Z",
++            (void *)nativeIsRunning }
++};
++
++int register_android_server_mperspective_PerspectiveService(JNIEnv* env) {
++    int res = jniRegisterNativeMethods(env, "com/android/server/mperspective/PerspectiveService",
++            gMethods, NELEM(gMethods));
++    LOG_ALWAYS_FATAL_IF(res < 0, "Unable to register native methods.");
++
++    jclass clazz = env->FindClass("com/android/server/mperspective/PerspectiveService");
++    gPerspectiveManagerClassInfo.mNativeClient = env->GetFieldID(clazz, "mNativeClient", "J");
++
++    return res;
++}
++
++} // namespace android
+\ No newline at end of file
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/jni/JNIHelp.h /media/hdd/lineage_16/frameworks/base/services/core/jni/JNIHelp.h
+--- /media/ssd/patches/frameworks/base/services/core/jni/JNIHelp.h	1970-01-01 02:00:00.000000000 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/jni/JNIHelp.h	2019-04-25 09:14:11.000000000 +0300
+@@ -0,0 +1,222 @@
++/*
++ * Copyright (C) 2007 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * JNI helper functions.
++ *
++ * This file may be included by C or C++ code, which is trouble because jni.h
++ * uses different typedefs for JNIEnv in each language.
++ *
++ * TODO: remove C support.
++ */
++#ifndef NATIVEHELPER_JNIHELP_H_
++#define NATIVEHELPER_JNIHELP_H_
++
++#include "jni.h"
++#include <errno.h>
++#include <unistd.h>
++
++#ifndef NELEM
++# define NELEM(x) ((int) (sizeof(x) / sizeof((x)[0])))
++#endif
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/*
++ * Register one or more native methods with a particular class.
++ * "className" looks like "java/lang/String". Aborts on failure.
++ * TODO: fix all callers and change the return type to void.
++ */
++int jniRegisterNativeMethods(C_JNIEnv* env, const char* className, const JNINativeMethod* gMethods, int numMethods);
++
++/*
++ * Throw an exception with the specified class and an optional message.
++ *
++ * The "className" argument will be passed directly to FindClass, which
++ * takes strings with slashes (e.g. "java/lang/Object").
++ *
++ * If an exception is currently pending, we log a warning message and
++ * clear it.
++ *
++ * Returns 0 on success, nonzero if something failed (e.g. the exception
++ * class couldn't be found, so *an* exception will still be pending).
++ *
++ * Currently aborts the VM if it can't throw the exception.
++ */
++int jniThrowException(C_JNIEnv* env, const char* className, const char* msg);
++
++/*
++ * Throw a java.lang.NullPointerException, with an optional message.
++ */
++int jniThrowNullPointerException(C_JNIEnv* env, const char* msg);
++
++/*
++ * Throw a java.lang.RuntimeException, with an optional message.
++ */
++int jniThrowRuntimeException(C_JNIEnv* env, const char* msg);
++
++/*
++ * Throw a java.io.IOException, generating the message from errno.
++ */
++int jniThrowIOException(C_JNIEnv* env, int errnum);
++
++/*
++ * Return a pointer to a locale-dependent error string explaining errno
++ * value 'errnum'. The returned pointer may or may not be equal to 'buf'.
++ * This function is thread-safe (unlike strerror) and portable (unlike
++ * strerror_r).
++ */
++const char* jniStrError(int errnum, char* buf, size_t buflen);
++
++/*
++ * Returns a new java.io.FileDescriptor for the given int fd.
++ */
++jobject jniCreateFileDescriptor(C_JNIEnv* env, int fd);
++
++/*
++ * Returns the int fd from a java.io.FileDescriptor.
++ */
++int jniGetFDFromFileDescriptor(C_JNIEnv* env, jobject fileDescriptor);
++
++/*
++ * Sets the int fd in a java.io.FileDescriptor.
++ */
++void jniSetFileDescriptorOfFD(C_JNIEnv* env, jobject fileDescriptor, int value);
++
++/*
++ * Returns the reference from a java.lang.ref.Reference.
++ */
++jobject jniGetReferent(C_JNIEnv* env, jobject ref);
++
++/*
++ * Returns a Java String object created from UTF-16 data either from jchar or,
++ * if called from C++11, char16_t (a bitwise identical distinct type).
++ */
++jstring jniCreateString(C_JNIEnv* env, const jchar* unicodeChars, jsize len);
++
++/*
++ * Log a message and an exception.
++ * If exception is NULL, logs the current exception in the JNI environment.
++ */
++void jniLogException(C_JNIEnv* env, int priority, const char* tag, jthrowable exception);
++
++#ifdef __cplusplus
++}
++#endif
++
++
++/*
++ * For C++ code, we provide inlines that map to the C functions.  g++ always
++ * inlines these, even on non-optimized builds.
++ */
++#if defined(__cplusplus)
++inline int jniRegisterNativeMethods(JNIEnv* env, const char* className, const JNINativeMethod* gMethods, int numMethods) {
++    return jniRegisterNativeMethods(&env->functions, className, gMethods, numMethods);
++}
++
++inline int jniThrowException(JNIEnv* env, const char* className, const char* msg) {
++    return jniThrowException(&env->functions, className, msg);
++}
++
++extern "C" int jniThrowExceptionFmt(C_JNIEnv* env, const char* className, const char* fmt, va_list args);
++
++/*
++ * Equivalent to jniThrowException but with a printf-like format string and
++ * variable-length argument list. This is only available in C++.
++ */
++inline int jniThrowExceptionFmt(JNIEnv* env, const char* className, const char* fmt, ...) {
++    va_list args;
++    va_start(args, fmt);
++    return jniThrowExceptionFmt(&env->functions, className, fmt, args);
++    va_end(args);
++}
++
++inline int jniThrowNullPointerException(JNIEnv* env, const char* msg) {
++    return jniThrowNullPointerException(&env->functions, msg);
++}
++
++inline int jniThrowRuntimeException(JNIEnv* env, const char* msg) {
++    return jniThrowRuntimeException(&env->functions, msg);
++}
++
++inline int jniThrowIOException(JNIEnv* env, int errnum) {
++    return jniThrowIOException(&env->functions, errnum);
++}
++
++inline jobject jniCreateFileDescriptor(JNIEnv* env, int fd) {
++    return jniCreateFileDescriptor(&env->functions, fd);
++}
++
++inline int jniGetFDFromFileDescriptor(JNIEnv* env, jobject fileDescriptor) {
++    return jniGetFDFromFileDescriptor(&env->functions, fileDescriptor);
++}
++
++inline void jniSetFileDescriptorOfFD(JNIEnv* env, jobject fileDescriptor, int value) {
++    jniSetFileDescriptorOfFD(&env->functions, fileDescriptor, value);
++}
++
++inline jobject jniGetReferent(JNIEnv* env, jobject ref) {
++    return jniGetReferent(&env->functions, ref);
++}
++
++inline jstring jniCreateString(JNIEnv* env, const jchar* unicodeChars, jsize len) {
++    return jniCreateString(&env->functions, unicodeChars, len);
++}
++
++#if __cplusplus >= 201103L
++inline jstring jniCreateString(JNIEnv* env, const char16_t* unicodeChars, jsize len) {
++    return jniCreateString(&env->functions, reinterpret_cast<const jchar*>(unicodeChars), len);
++}
++#endif  // __cplusplus >= 201103L
++
++inline void jniLogException(JNIEnv* env, int priority, const char* tag, jthrowable exception = NULL) {
++    jniLogException(&env->functions, priority, tag, exception);
++}
++
++#if !defined(DISALLOW_COPY_AND_ASSIGN)
++// DISALLOW_COPY_AND_ASSIGN disallows the copy and operator= functions. It goes in the private:
++// declarations in a class.
++#if __cplusplus >= 201103L
++#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
++  TypeName(const TypeName&) = delete;  \
++  void operator=(const TypeName&) = delete
++#else
++#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
++  TypeName(const TypeName&);  \
++  void operator=(const TypeName&)
++#endif  // __has_feature(cxx_deleted_functions)
++#endif  // !defined(DISALLOW_COPY_AND_ASSIGN)
++
++#endif
++
++/*
++ * TEMP_FAILURE_RETRY is defined by some, but not all, versions of
++ * <unistd.h>. (Alas, it is not as standard as we'd hoped!) So, if it's
++ * not already defined, then define it here.
++ */
++#ifndef TEMP_FAILURE_RETRY
++/* Used to retry syscalls that can return EINTR. */
++#define TEMP_FAILURE_RETRY(exp) ({         \
++    typeof (exp) _rc;                      \
++    do {                                   \
++        _rc = (exp);                       \
++    } while (_rc == -1 && errno == EINTR); \
++    _rc; })
++#endif
++
++#endif  /* NATIVEHELPER_JNIHELP_H_ */
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/core/jni/onload.cpp /media/hdd/lineage_16/frameworks/base/services/core/jni/onload.cpp
+--- /media/ssd/patches/frameworks/base/services/core/jni/onload.cpp	2020-03-08 02:58:22.292821791 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/core/jni/onload.cpp	2019-04-25 05:22:24.000000000 +0300
+@@ -53,6 +53,7 @@
+ int register_android_server_SyntheticPasswordManager(JNIEnv* env);
+ int register_android_server_GraphicsStatsService(JNIEnv* env);
+ int register_android_hardware_display_DisplayViewport(JNIEnv* env);
++int register_android_server_mperspective_PerspectiveService(JNIEnv* env);
+ int register_android_server_net_NetworkStatsService(JNIEnv* env);
+ #ifdef USE_ARC
+ int register_android_server_ArcVideoService();
+@@ -103,6 +104,7 @@
+     register_android_server_SyntheticPasswordManager(env);
+     register_android_server_GraphicsStatsService(env);
+     register_android_hardware_display_DisplayViewport(env);
++    register_android_server_mperspective_PerspectiveService(env);
+     register_android_server_net_NetworkStatsService(env);
+ #ifdef USE_ARC
+     register_android_server_ArcVideoService();
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/base/services/java/com/android/server/SystemServer.java /media/hdd/lineage_16/frameworks/base/services/java/com/android/server/SystemServer.java
+--- /media/ssd/patches/frameworks/base/services/java/com/android/server/SystemServer.java	2020-03-08 02:58:22.296821808 +0200
++++ /media/hdd/lineage_16/frameworks/base/services/java/com/android/server/SystemServer.java	2019-04-25 05:29:13.000000000 +0300
+@@ -88,6 +88,7 @@
+ import com.android.server.media.MediaSessionService;
+ import com.android.server.media.projection.MediaProjectionManagerService;
+ import com.android.server.net.NetworkPolicyManagerService;
++import com.android.server.mperspective.PerspectiveService;
+ import com.android.server.net.NetworkStatsService;
+ import com.android.server.net.watchlist.NetworkWatchlistService;
+ import com.android.server.notification.NotificationManagerService;
+@@ -1114,6 +1115,8 @@
+             }
+             traceEnd();
+ 
++ 
++
+             traceBeginAndSlog("StartIpSecService");
+             try {
+                 ipSecService = IpSecService.create(context);
+@@ -1157,6 +1160,17 @@
+             traceEnd();
+ 
+             if (!mOnlyCore) {
++
++            	traceBeginAndSlog("StartPerspectiveService");
++ 				try {
++                    mSystemServiceManager.startService(PerspectiveService.Lifecycle.class);
++                } 
++                catch (Throwable e) 
++                {
++                    reportWtf("starting PerspectiveService", e);
++                }
++            	traceEnd();
++
+                 if (context.getPackageManager().hasSystemFeature(
+                             PackageManager.FEATURE_WIFI)) {
+                     // Wifi Service must be started first for wifi-related services.

@@ -1,0 +1,154 @@
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/native/include/gui/Surface.h /media/hdd/lineage_16/frameworks/native/include/gui/Surface.h
+--- /media/ssd/patches/frameworks/native/include/gui/Surface.h	2020-03-08 02:58:22.956824744 +0200
++++ /media/hdd/lineage_16/frameworks/native/include/gui/Surface.h	2019-04-25 06:28:40.000000000 +0300
+@@ -254,6 +254,8 @@
+     virtual void setSurfaceDamage(android_native_rect_t* rects, size_t numRects);
+ 
+ public:
++    virtual int lockWithHandle(ANativeWindow_Buffer* outBuffer,
++              buffer_handle_t* handle, ARect* inOutDirtyBounds);
+     virtual int disconnect(int api,
+             IGraphicBufferProducer::DisconnectMode mode =
+                     IGraphicBufferProducer::DisconnectMode::Api);
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/native/libs/gui/include/gui/Surface.h /media/hdd/lineage_16/frameworks/native/libs/gui/include/gui/Surface.h
+--- /media/ssd/patches/frameworks/native/libs/gui/include/gui/Surface.h	2020-03-08 02:58:22.956824744 +0200
++++ /media/hdd/lineage_16/frameworks/native/libs/gui/include/gui/Surface.h	2019-04-25 06:28:40.000000000 +0300
+@@ -254,6 +254,8 @@
+     virtual void setSurfaceDamage(android_native_rect_t* rects, size_t numRects);
+ 
+ public:
++    virtual int lockWithHandle(ANativeWindow_Buffer* outBuffer,
++              buffer_handle_t* handle, ARect* inOutDirtyBounds);
+     virtual int disconnect(int api,
+             IGraphicBufferProducer::DisconnectMode mode =
+                     IGraphicBufferProducer::DisconnectMode::Api);
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/native/libs/gui/Surface.cpp /media/hdd/lineage_16/frameworks/native/libs/gui/Surface.cpp
+--- /media/ssd/patches/frameworks/native/libs/gui/Surface.cpp	2020-03-08 02:58:22.956824744 +0200
++++ /media/hdd/lineage_16/frameworks/native/libs/gui/Surface.cpp	2019-04-25 06:31:08.000000000 +0300
+@@ -1761,6 +1761,19 @@
+     return err;
+ }
+ 
++status_t Surface::lockWithHandle(ANativeWindow_Buffer* outBuffer,
++        buffer_handle_t* handle, ARect* inOutDirtyBounds)
++{
++    status_t err = lock(outBuffer, inOutDirtyBounds);
++
++    if (err == 0) {
++        *handle = mLockedBuffer->handle;
++    }
++    return err;
++}
++
++
++
+ status_t Surface::unlockAndPost()
+ {
+     if (mLockedBuffer == 0) {
+diff -ruN '--exclude=.git' /media/ssd/patches/frameworks/native/services/inputflinger/EventHub.cpp /media/hdd/lineage_16/frameworks/native/services/inputflinger/EventHub.cpp
+--- /media/ssd/patches/frameworks/native/services/inputflinger/EventHub.cpp	2020-03-08 02:58:23.024825046 +0200
++++ /media/hdd/lineage_16/frameworks/native/services/inputflinger/EventHub.cpp	2019-05-10 16:25:53.000000000 +0300
+@@ -30,6 +30,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/utsname.h>
+ #include <unistd.h>
++#include <sys/types.h>
+ 
+ #define LOG_TAG "EventHub"
+ 
+@@ -1107,6 +1108,50 @@
+     return OK;
+ }
+ 
++
++pid_t proc_find(const char* name)
++{
++    DIR* dir;
++    struct dirent* ent;
++    char buf[512];
++
++    long  pid;
++    char pname[100] = {0,};
++    char state;
++    FILE *fp=NULL;
++
++    if (!(dir = opendir("/proc"))) {
++        return -1;
++    }
++
++    while((ent = readdir(dir)) != NULL) {
++        long lpid = atol(ent->d_name);
++        if(lpid < 0)
++            continue;
++        snprintf(buf, sizeof(buf), "/proc/%ld/stat", lpid);
++        fp = fopen(buf, "r");
++
++        if (fp) {
++            if ( (fscanf(fp, "%ld (%[^)]) %c", &pid, pname, &state)) != 3 ){
++                fclose(fp);
++                closedir(dir);
++                return -1;
++            }
++            if (!strcmp(pname, name)) {
++                fclose(fp);
++                closedir(dir);
++                return (pid_t)lpid;
++            }
++            fclose(fp);
++        }
++    }
++
++
++	closedir(dir);
++	return -1;
++}
++
++
+ status_t EventHub::openDeviceLocked(const char *devicePath) {
+     char buffer[80];
+ 
+@@ -1353,6 +1398,44 @@
+         device->classes |= INPUT_DEVICE_CLASS_MIC;
+     }
+ 
++    /*
++     * Maru: reserve bluetooth keyboards and mice for desktop
++     *
++     * TODO: add hook for dynamic switching
++     */
++     pid_t pid = -1;
++     if (device->identifier.bus == BUS_BLUETOOTH
++        	    && (device->classes & (INPUT_DEVICE_CLASS_ALPHAKEY | INPUT_DEVICE_CLASS_CURSOR))) 
++      {
++                pid = proc_find("mclient");
++                if (pid != -1)
++                {
++
++	  	      ALOGD("Reserving (dropping) device for Maru Desktop: id=%d, path='%s', name='%s'",
++        		        deviceId, devicePath, device->identifier.name.string());
++	        	delete device;
++	        	return -1;
++                }
++     }
++     if (device->identifier.bus == BUS_USB
++        	    && (device->classes & (INPUT_DEVICE_CLASS_KEYBOARD | INPUT_DEVICE_CLASS_CURSOR))) 
++     {
++                pid = proc_find("mclient");
++                if (pid != -1)
++                {
++
++                      ALOGD("Reserving (dropping) device for Maru Desktop: id=%d, path='%s', name='%s'",
++                                deviceId, devicePath, device->identifier.name.string());
++                        delete device;
++                        return -1;
++                }
++     }
++
++
++
++
++
++
+     // Determine whether the device is external or internal.
+     if (isExternalDeviceLocked(device)) {
+         device->classes |= INPUT_DEVICE_CLASS_EXTERNAL;

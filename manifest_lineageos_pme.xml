@@ -7,9 +7,9 @@
   <project name="pintaf/proprietary_vendor_htc" path="vendor/htc" remote="github" revision="lineage-16.0" />
   <project name="LineageOS/android_packages_resources_devicesettings" path="packages/resources/devicesettings" remote="github" revision="lineage-16.0" />
   
-  <project path="external/lxc" name="maruos/platform_external_lxc" remote="github" />
+  <project path="external/lxc" name="maruos/platform_external_lxc" remote="github" revision="maru-0.6"/>
   <project path="prebuilts/busybox" name="maruos/platform_prebuilts_busybox" remote="github" revision="master" />
-  <project path="vendor/maruos" name="maruos/vendor_maruos" remote="github" />
+  <project path="vendor/maruos" name="maruos/vendor_maruos" remote="github"  revision="maru-0.6" />
   <project path="vendor/maruos/mflinger" name="maruos/mflinger" remote="github" revision="master" />
   <project path="vendor/maruos/blueprints" name="maruos/blueprints" remote="github" revision="master" />
   <project path="vendor/maruos/installer" name="maruos/installer" remote="github" revision="master" />

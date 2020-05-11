@@ -1,0 +1,7 @@
+<manifest>
+  <project name="pintaf/android_device_motorola_nash" path="device/motorola/nash" remote="github"  revision="maru-0.7" />
+  <project name="pintaf/android_kernel_motorola_msm8998" path="kernel/motorola/msm8998" remote="github"  revision="maru-0.7" />
+  <project name="LineageOS/android_packages_resources_devicesettings" path="packages/resources/devicesettings" remote="github" />
+  <project name="LineageOS/android_external_bson" path="external/bson" remote="github" />
+  <project name="LineageOS/android_system_qcom" path="system/qcom" remote="github" />
+</manifest>

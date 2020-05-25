@@ -1,4 +1,5 @@
 <manifest>
+  <project name="TheMuppets/proprietary_vendor_motorola" path="proprietary/vendor/motorola" remote="github"  revision="lineage-16.0" />
   <project name="pintaf/android_device_motorola_nash" path="device/motorola/nash" remote="github"  revision="maru-0.7" />
   <project name="pintaf/android_kernel_motorola_msm8998" path="kernel/motorola/msm8998" remote="github"  revision="maru-0.7" />
   <project name="LineageOS/android_packages_resources_devicesettings" path="packages/resources/devicesettings" remote="github" />

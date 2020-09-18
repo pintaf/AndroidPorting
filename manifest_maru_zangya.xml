@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="pintaf/android_device_bq_zangya" path="device/bq/zangya" remote="github" revision="maru-0.7" />
+  <project name="pintaf/android_device_bq_sdm660-common" path="device/bq/sdm660-common" remote="github" revision="maru-0.7" />
+  <project name="pintaf/android_kernel_bq_sdm660" path="kernel/bq/sdm660" remote="github" revision="maru-0.7" />
+  <project name="pintaf/proprietary_vendor_bq" path="vendor/bq" remote="github" revision="lineage-16.0" />
+</manifest>
